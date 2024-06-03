@@ -42,7 +42,7 @@ func main() {
 	if command == "decode" {
 		bencodedValue := os.Args[2]
 
-		decoded, err := decodeBencode(bencodedValue)
+		decoded, err := NewDecoder(bencodedValue).Decode()
 		if err != nil {
 			fmt.Println(err)
 			return
