@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"unicode"
 	// bencode "github.com/jackpal/bencode-go" // Available if you need it!
 )
@@ -28,6 +29,8 @@ func decodeBencode(bencodedString string) (interface{}, error) {
 		}
 
 		return bencodedString[firstColonIndex+1 : firstColonIndex+1+length], nil
+	} else if rune(bencodedString[0]) == 'i' {
+		return strconv.Atoi(bencodedString[1:strings.IndexByte(bencodedString, 'e')])
 	} else {
 		return "", fmt.Errorf("only strings are supported at the moment")
 	}
