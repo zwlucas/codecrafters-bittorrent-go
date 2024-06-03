@@ -36,12 +36,22 @@ func main() {
 			panic(err)
 		}
 
+		fmt.Printf("Tracker URL: %s\n", meta.Announce)
+		fmt.Printf("Length: %d\n", meta.Info.Length)
+
 		sha := sha1.New()
 		if err = bencode.Marshal(sha, meta.Info); err != nil {
 			panic(err)
 		}
 
-		fmt.Printf("Tracker URL: %s\nLength: %d\nInfo Hash: %x", meta.Announce, meta.Info.Length, sha.Sum(nil))
+		fmt.Printf("Info Hash: %x", sha.Sum(nil))
+
+		fmt.Printf("Piece Length: %d\n", meta.Info.PieceLength)
+		fmt.Println("Piece Hashes:")
+
+		for i := 0; i < len(meta.Info.Pieces); i += 20 {
+			fmt.Printf("%x\n", meta.Info.Pieces[i:i+20])
+		}
 
 	default:
 		fmt.Println("Unknown command: " + command)
