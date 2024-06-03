@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,31 +25,45 @@ func main() {
 		fmt.Println(string(jsonOutput))
 
 	case "info":
-		f, err := os.Open(os.Args[2])
+		c := NewClient("00112233445566778899", 6881)
+		tf, err := c.AddTorrentFile(os.Args[2])
 		if err != nil {
-			fmt.Println("Failed to open file: ", os.Args[2])
-		}
-
-		var meta Meta
-		if err = bencode.Unmarshal(f, &meta); err != nil {
 			panic(err)
 		}
 
-		fmt.Printf("Tracker URL: %s\n", meta.Announce)
-		fmt.Printf("Length: %d\n", meta.Info.Length)
+		fmt.Printf("Tracker URL: %s\n", tf.Meta.Announce)
+		fmt.Printf("Length: %d\n", tf.Meta.Info.Length)
 
-		sha := sha1.New()
-		if err = bencode.Marshal(sha, meta.Info); err != nil {
+		infoHash, err := tf.Meta.InfoHash()
+		if err != nil {
 			panic(err)
 		}
 
-		fmt.Printf("Info Hash: %x", sha.Sum(nil))
+		fmt.Printf("Info Hash: %x", infoHash)
 
-		fmt.Printf("Piece Length: %d\n", meta.Info.PieceLength)
+		fmt.Printf("Piece Length: %d\n", tf.Meta.Info.PieceLength)
 		fmt.Println("Piece Hashes:")
 
-		for i := 0; i < len(meta.Info.Pieces); i += 20 {
-			fmt.Printf("%x\n", meta.Info.Pieces[i:i+20])
+		for _, h := range tf.Meta.PieceHashes() {
+			fmt.Printf("%x\n", h)
+		}
+
+	case "peers":
+		c := NewClient("00112233445566778899", 6881)
+
+		_, err := c.AddTorrentFile(os.Args[2])
+		if err != nil {
+			panic(err)
+		}
+
+		pr, err := c.GetPeers(os.Args[2])
+
+		if err != nil {
+			panic(err)
+		}
+
+		for _, peer := range pr.Peers {
+			fmt.Println(peer)
 		}
 
 	default:
