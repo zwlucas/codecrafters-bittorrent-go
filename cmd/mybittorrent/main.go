@@ -75,6 +75,9 @@ func main() {
 		peerAddr := os.Args[3]
 
 		peer, err := c.Handshake(fn, peerAddr)
+
+		defer peer.Close()
+
 		if err != nil {
 			panic(err)
 		}
@@ -91,6 +94,7 @@ func main() {
 		}
 
 		c := createClient(fn)
+		defer c.Close()
 		pr, err := c.GetPeers(fn)
 		if err != nil {
 			panic(err)
@@ -109,14 +113,38 @@ func main() {
 			panic(fmt.Errorf("no peers found for file: %s", out))
 		}
 
-		defer peer.Close()
+		f, err := os.Create(out)
+		if err != nil {
+			panic(f)
+		}
 
-		err = peer.DownloadPiece(out, index)
+		defer f.Close()
+
+		err = peer.DownloadPiece(f, c.Torrents[fn].Meta.Pieces()[index])
 		if err != nil {
 			panic(err)
 		}
 
 		fmt.Printf("Piece %d downloaded to %s.", index, out)
+
+	case "download":
+		out := os.Args[3]
+		fn := os.Args[4]
+		c := createClient(fn)
+
+		defer c.Close()
+
+		ct, err := c.ConnectPeers(fn)
+		if err != nil {
+			panic(err)
+		}
+
+		err = ct.Download(out)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("Downloaded %s to %s", fn, out)
 
 	default:
 		fmt.Println("Unknown command: " + command)

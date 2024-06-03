@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha1"
+	"fmt"
 	"math"
 
 	bencode "github.com/jackpal/bencode-go"
@@ -22,6 +23,13 @@ type FileInfo struct {
 	Pieces      string `bencode:"pieces"`
 }
 
+type Piece struct {
+	Index  int
+	Len    int
+	Hash   string
+	Blocks []uint32
+}
+
 func (m Meta) InfoHash() ([]byte, error) {
 	sha := sha1.New()
 	if err := bencode.Marshal(sha, m.Info); err != nil {
@@ -38,16 +46,6 @@ func (m Meta) PieceHashes() []string {
 	}
 
 	return hashes
-}
-
-func (m Meta) CheckHash(pieceIndex int, data []byte) bool {
-	sha := sha1.New()
-
-	if _, err := bytes.NewBuffer(data).WriteTo(sha); err != nil {
-		return false
-	}
-
-	return bytes.Equal([]byte(m.Info.Pieces[pieceIndex*20:pieceIndex*20+20]), sha.Sum(nil))
 }
 
 func (m Meta) PieceCount() int {
@@ -83,4 +81,41 @@ func (m Meta) BlockLens(pieceIdx int) []uint32 {
 	}
 
 	return blocks
+}
+
+func (p Piece) CheckHash(data []byte) error {
+	sha := sha1.New()
+	if _, err := bytes.NewBuffer(data).WriteTo(sha); err != nil {
+		return err
+	}
+
+	exp, act := []byte(p.Hash), sha.Sum(nil)
+	if !bytes.Equal(exp, act) {
+		return fmt.Errorf("expected hash: %x, actual: %x", exp, act)
+	}
+
+	return nil
+}
+
+func (m Meta) Pieces() []Piece {
+	cnt := m.PieceCount()
+	pieces := make([]Piece, cnt)
+
+	for i := 0; i < cnt; i++ {
+		p := Piece{
+			Index:  i,
+			Hash:   m.Info.Pieces[i*20 : i*20+20],
+			Blocks: m.BlockLens(i),
+		}
+
+		if i < cnt-1 {
+			p.Len = m.Info.PieceLength
+		} else {
+			p.Len = m.Info.Length - i*m.Info.PieceLength
+		}
+
+		pieces[i] = p
+	}
+
+	return pieces
 }
