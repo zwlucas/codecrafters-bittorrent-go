@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -19,7 +18,7 @@ import (
 type Client struct {
 	PeerId   string
 	Port     int
-	Torrents map[string]ClientTorrent
+	Torrents map[string]*ClientTorrent
 }
 
 type ClientTorrent struct {
@@ -34,17 +33,15 @@ type PeerResponse struct {
 	Peers    []string
 }
 
-type HandshakeMessage []byte
-
 func NewClient(peerId string, port int) *Client {
 	return &Client{
 		PeerId:   peerId,
 		Port:     port,
-		Torrents: make(map[string]ClientTorrent),
+		Torrents: make(map[string]*ClientTorrent),
 	}
 }
 
-func (c *Client) AddTorrentFile(filename string) (ClientTorrent, error) {
+func (c *Client) AddTorrentFile(filename string) error {
 	f, err := os.Open(filename)
 	defer func(f *os.File) {
 		err := f.Close()
@@ -60,19 +57,17 @@ func (c *Client) AddTorrentFile(filename string) (ClientTorrent, error) {
 	var meta Meta
 
 	if err = bencode.Unmarshal(f, &meta); err != nil {
-		return ClientTorrent{}, err
+		return err
 	}
 
-	t := ClientTorrent{
+	c.Torrents[filename] = &ClientTorrent{
 		Meta:       meta,
 		Uploaded:   0,
 		Downloaded: 0,
 		Left:       meta.Info.Length,
 	}
 
-	c.Torrents[filename] = t
-
-	return t, nil
+	return nil
 }
 
 func (ct ClientTorrent) getUrl(c Client) (string, error) {
@@ -141,13 +136,7 @@ func (c *Client) GetPeers(filename string) (PeerResponse, error) {
 	}, err
 }
 
-func (m HandshakeMessage) PeerIdHex() string {
-
-	return hex.EncodeToString(m[48:])
-
-}
-
-func (c *Client) Handshake(filename, peerAddr string) (HandshakeMessage, error) {
+func (c *Client) Handshake(filename, peerAddr string) (*Peer, error) {
 	ct, ok := c.Torrents[filename]
 	if !ok {
 		return nil, fmt.Errorf("missing torrent file: %s", filename)
@@ -167,12 +156,6 @@ func (c *Client) Handshake(filename, peerAddr string) (HandshakeMessage, error) 
 	buf.WriteString(c.PeerId)
 
 	conn, err := net.Dial("tcp", peerAddr)
-	defer func(conn net.Conn) {
-		err := conn.Close()
-		if err != nil {
-			slog.Error("failed to close connection", "peerAddr", peerAddr)
-		}
-	}(conn)
 
 	if err != nil {
 		return nil, err
@@ -184,7 +167,23 @@ func (c *Client) Handshake(filename, peerAddr string) (HandshakeMessage, error) 
 	}
 
 	respBuf := make([]byte, 68)
-	_, err = io.LimitReader(conn, 68).Read(respBuf)
 
-	return respBuf, nil
+	_, err = io.ReadFull(conn, respBuf)
+
+	peer := &Peer{
+		conn:      conn,
+		handshake: respBuf,
+		ct:        ct,
+	}
+
+	if !bytes.Equal(peer.InfoHash(), hash) {
+		err := conn.Close()
+		if err != nil {
+			slog.Error("Failed to close peer connection", "remoteAddr", peer.conn.RemoteAddr())
+		}
+
+		return nil, fmt.Errorf("invalid info hash from peer: %x, addr: %s", peer.InfoHash(), peerAddr)
+	}
+
+	return peer, nil
 }

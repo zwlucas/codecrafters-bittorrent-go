@@ -4,17 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	bencode "github.com/jackpal/bencode-go" // Available if you need it!
 )
 
-func createClient() *Client {
-	fn := os.Args[2]
+func createClient(fn string) *Client {
 	c := NewClient("00112233445566778899", 6881)
 
-	_, err := c.AddTorrentFile(fn)
-	if err != nil {
+	if err := c.AddTorrentFile(fn); err != nil {
 		panic(err)
 	}
 
@@ -38,7 +37,7 @@ func main() {
 
 	case "info":
 		fn := os.Args[2]
-		c := createClient()
+		c := createClient(fn)
 		meta := c.Torrents[fn].Meta
 		fmt.Printf("Tracker URL: %s\n", meta.Announce)
 		fmt.Printf("Length: %d\n", meta.Info.Length)
@@ -59,7 +58,7 @@ func main() {
 
 	case "peers":
 		fn := os.Args[2]
-		c := createClient()
+		c := createClient(fn)
 
 		pr, err := c.GetPeers(fn)
 		if err != nil {
@@ -72,15 +71,52 @@ func main() {
 
 	case "handshake":
 		fn := os.Args[2]
-		c := createClient()
+		c := createClient(fn)
 		peerAddr := os.Args[3]
 
-		hs, err := c.Handshake(fn, peerAddr)
+		peer, err := c.Handshake(fn, peerAddr)
 		if err != nil {
 			panic(err)
 		}
 
-		fmt.Printf("Peer ID: %s\n", hs.PeerIdHex())
+		fmt.Printf("Peer ID: %s\n", peer.PeerIdHexString())
+
+	case "download_piece":
+		out := os.Args[3]
+		fn := os.Args[4]
+
+		index, err := strconv.Atoi(os.Args[5])
+		if err != nil {
+			panic(err)
+		}
+
+		c := createClient(fn)
+		pr, err := c.GetPeers(fn)
+		if err != nil {
+			panic(err)
+		}
+
+		var peer *Peer
+
+		for _, peerAddr := range pr.Peers {
+			peer, err = c.Handshake(fn, peerAddr)
+			if err != nil {
+				continue
+			}
+		}
+
+		if peer == nil {
+			panic(fmt.Errorf("no peers found for file: %s", out))
+		}
+
+		defer peer.Close()
+
+		err = peer.DownloadPiece(out, index)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("Piece %d downloaded to %s.", index, out)
 
 	default:
 		fmt.Println("Unknown command: " + command)
