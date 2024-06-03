@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -29,6 +33,8 @@ type PeerResponse struct {
 	Interval int
 	Peers    []string
 }
+
+type HandshakeMessage []byte
 
 func NewClient(peerId string, port int) *Client {
 	return &Client{
@@ -133,4 +139,52 @@ func (c *Client) GetPeers(filename string) (PeerResponse, error) {
 		Interval: resp.Interval,
 		Peers:    DecodePeers([]byte(resp.Peers)),
 	}, err
+}
+
+func (m HandshakeMessage) PeerIdHex() string {
+
+	return hex.EncodeToString(m[48:])
+
+}
+
+func (c *Client) Handshake(filename, peerAddr string) (HandshakeMessage, error) {
+	ct, ok := c.Torrents[filename]
+	if !ok {
+		return nil, fmt.Errorf("missing torrent file: %s", filename)
+	}
+
+	buf := new(bytes.Buffer)
+	buf.WriteByte(19)
+	buf.WriteString("BitTorrent protocol")
+	buf.Write([]byte{0, 0, 0, 0, 0, 0, 0, 0})
+
+	hash, err := ct.Meta.InfoHash()
+	if err != nil {
+		return nil, err
+	}
+
+	buf.Write(hash)
+	buf.WriteString(c.PeerId)
+
+	conn, err := net.Dial("tcp", peerAddr)
+	defer func(conn net.Conn) {
+		err := conn.Close()
+		if err != nil {
+			slog.Error("failed to close connection", "peerAddr", peerAddr)
+		}
+	}(conn)
+
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = buf.WriteTo(conn)
+	if err != nil {
+		return nil, err
+	}
+
+	respBuf := make([]byte, 68)
+	_, err = io.LimitReader(conn, 68).Read(respBuf)
+
+	return respBuf, nil
 }

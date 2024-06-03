@@ -9,6 +9,18 @@ import (
 	bencode "github.com/jackpal/bencode-go" // Available if you need it!
 )
 
+func createClient() *Client {
+	fn := os.Args[2]
+	c := NewClient("00112233445566778899", 6881)
+
+	_, err := c.AddTorrentFile(fn)
+	if err != nil {
+		panic(err)
+	}
+
+	return c
+}
+
 func main() {
 	command := os.Args[1]
 
@@ -25,39 +37,31 @@ func main() {
 		fmt.Println(string(jsonOutput))
 
 	case "info":
-		c := NewClient("00112233445566778899", 6881)
-		tf, err := c.AddTorrentFile(os.Args[2])
-		if err != nil {
-			panic(err)
-		}
+		fn := os.Args[2]
+		c := createClient()
+		meta := c.Torrents[fn].Meta
+		fmt.Printf("Tracker URL: %s\n", meta.Announce)
+		fmt.Printf("Length: %d\n", meta.Info.Length)
 
-		fmt.Printf("Tracker URL: %s\n", tf.Meta.Announce)
-		fmt.Printf("Length: %d\n", tf.Meta.Info.Length)
-
-		infoHash, err := tf.Meta.InfoHash()
+		infoHash, err := meta.InfoHash()
 		if err != nil {
 			panic(err)
 		}
 
 		fmt.Printf("Info Hash: %x", infoHash)
 
-		fmt.Printf("Piece Length: %d\n", tf.Meta.Info.PieceLength)
+		fmt.Printf("Piece Length: %d\n", meta.Info.PieceLength)
 		fmt.Println("Piece Hashes:")
 
-		for _, h := range tf.Meta.PieceHashes() {
+		for _, h := range meta.PieceHashes() {
 			fmt.Printf("%x\n", h)
 		}
 
 	case "peers":
-		c := NewClient("00112233445566778899", 6881)
+		fn := os.Args[2]
+		c := createClient()
 
-		_, err := c.AddTorrentFile(os.Args[2])
-		if err != nil {
-			panic(err)
-		}
-
-		pr, err := c.GetPeers(os.Args[2])
-
+		pr, err := c.GetPeers(fn)
 		if err != nil {
 			panic(err)
 		}
@@ -65,6 +69,18 @@ func main() {
 		for _, peer := range pr.Peers {
 			fmt.Println(peer)
 		}
+
+	case "handshake":
+		fn := os.Args[2]
+		c := createClient()
+		peerAddr := os.Args[3]
+
+		hs, err := c.Handshake(fn, peerAddr)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("Peer ID: %s\n", hs.PeerIdHex())
 
 	default:
 		fmt.Println("Unknown command: " + command)
